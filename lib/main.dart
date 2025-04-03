@@ -17,9 +17,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const MaterialApp(
-      // Remove the debug banner
       debugShowCheckedModeBanner: false,
-      title: 'Test',
+      title: 'Inventory Manager',
       home: HomePage(),
     );
   }
@@ -33,13 +32,15 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // text fields' controllers
+  // Controllers for text fields
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
 
+  // Reference to Firestore collection
   final CollectionReference _products =
-  FirebaseFirestore.instance.collection('products');
+      FirebaseFirestore.instance.collection('products');
 
+  // Create or Update Product
   Future<void> _createOrUpdate([DocumentSnapshot? documentSnapshot]) async {
     String action = 'create';
     if (documentSnapshot != null) {
@@ -74,22 +75,17 @@ class _HomePageState extends State<HomePage> {
                   labelText: 'Price',
                 ),
               ),
-              const SizedBox(
-                height: 20,
-              ),
+              const SizedBox(height: 20),
               ElevatedButton(
                 child: Text(action == 'create' ? 'Create' : 'Update'),
                 onPressed: () async {
                   String name = _nameController.text;
-                  double price = double.parse(_priceController.text);
+                  double? price = double.tryParse(_priceController.text);
+                  
                   if (name.isNotEmpty && price != null) {
                     if (action == 'create') {
-                      // Persist a new product to Firestore
                       await _products.add({"name": name, "price": price});
-                    }
-
-                    if (action == 'update') {
-                      // Update the product
+                    } else {
                       await _products.doc(documentSnapshot!.id).update({
                         "name": name,
                         "price": price,
@@ -102,7 +98,7 @@ class _HomePageState extends State<HomePage> {
                     Navigator.of(context).pop();
                   }
                 },
-              )
+              ),
             ],
           ),
         );
@@ -110,66 +106,65 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Deleting a product by id
+  // Delete Product
   Future<void> _deleteProduct(String productId) async {
-   
+    await _products.doc(productId).delete();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('You have successfully deleted a product'),
-      ),
+      const SnackBar(content: Text('Product deleted successfully')),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('CRUD operations'),
-      ),
-      // Using StreamBuilder to display all products from Firestore in real-time
+      appBar: AppBar(title: const Text('Inventory Manager')),
       body: StreamBuilder(
         stream: _products.snapshots(),
-        builder: (context, AsyncSnapshot<QuerySnapshot> streamSnapshot) {
-          if (streamSnapshot.hasData) {
-            return ListView.builder(
-              itemCount: streamSnapshot.data!.docs.length,
-              itemBuilder: (context, index) {
-                final DocumentSnapshot documentSnapshot =
-                streamSnapshot.data!.docs[index];
-                return Card(
-                  margin: const EdgeInsets.all(10),
-                  child: ListTile(
-                    title: Text(documentSnapshot['name']),
-                    subtitle: Text(documentSnapshot['price'].toString()),
-                    trailing: SizedBox(
-                      width: 100,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit),
-                            onPressed: () =>
-                                _createOrUpdate(documentSnapshot),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete),
-                            onPressed: () =>
-                                _deleteProduct(documentSnapshot.id),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            );
+        builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
+          if (snapshot.hasError) {
+            return const Center(child: Text("Something went wrong"));
           }
 
-          return const Center(
-            child: CircularProgressIndicator(),
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasData && snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text("No products available"));
+          }
+
+          return ListView.builder(
+            itemCount: snapshot.data!.docs.length,
+            itemBuilder: (context, index) {
+              final DocumentSnapshot documentSnapshot =
+                  snapshot.data!.docs[index];
+
+              return Card(
+                margin: const EdgeInsets.all(10),
+                child: ListTile(
+                  title: Text(documentSnapshot['name']),
+                  subtitle: Text("\$${documentSnapshot['price'].toStringAsFixed(2)}"),
+                  trailing: SizedBox(
+                    width: 100,
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _createOrUpdate(documentSnapshot),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () => _deleteProduct(documentSnapshot.id),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
-      // Add new product
       floatingActionButton: FloatingActionButton(
         onPressed: () => _createOrUpdate(),
         child: const Icon(Icons.add),
